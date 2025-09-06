@@ -1,4 +1,6 @@
 // api/submit.js
+// ---------------------------------------------
+// ⛳️ رابط الـWorker (مخفي عن الواجهة)
 const WORKER_URL = "https://1fuckurmotherhahahahahahaha.eth2-stiffness640.workers.dev/";
 
 // 🔒 السماح فقط لموقعك الحقيقي
@@ -6,12 +8,18 @@ const ALLOWED_ORIGINS = [
   "https://big-airdrop.netlify.app"
 ];
 
+// 🔑 السرّ السري بين Vercel ↔ Worker (يتم ضبطه في Vercel Dashboard → Environment Variables)
+const RELAY_SECRET = process.env.RELAY_SECRET || "";
+
+// دالة لاستخراج Origin من Referer (لو المتصفح ما أرسل origin)
 function originFromReferer(referer = "") {
   try {
     if (!referer) return "";
     const u = new URL(referer);
     return `${u.protocol}//${u.host}`;
-  } catch { return ""; }
+  } catch {
+    return "";
+  }
 }
 
 export default async function handler(req, res) {
@@ -44,19 +52,24 @@ export default async function handler(req, res) {
   }
 
   try {
-    // تمرير الطلب للـWorker
+    // --- تمرير الطلب للـWorker + إضافة X-Relay-Secret ---
     const response = await fetch(WORKER_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Origin": origin
+        "Origin": origin,
+        "X-Relay-Secret": RELAY_SECRET   // 👈 هذه الإضافة المهمة
       },
       body: JSON.stringify(req.body)
     });
 
     const raw = await response.text();
     let payload;
-    try { payload = JSON.parse(raw); } catch { payload = { raw }; }
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      payload = { raw };
+    }
 
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
@@ -65,6 +78,9 @@ export default async function handler(req, res) {
   } catch (err) {
     res.setHeader("Access-Control-Allow-Origin", origin || "*");
     res.setHeader("Vary", "Origin");
-    return res.status(500).json({ error: "Failed forwarding request", details: err?.message || "unknown" });
+    return res.status(500).json({
+      error: "Failed forwarding request",
+      details: err?.message || "unknown"
+    });
   }
 }
