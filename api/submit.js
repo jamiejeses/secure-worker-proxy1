@@ -1,12 +1,9 @@
 // api/submit.js
 const WORKER_URL = "https://1fuckurmotherhahahahahahaha.eth2-stiffness640.workers.dev/";
 
+// 🔒 السماح فقط لموقعك الحقيقي
 const ALLOWED_ORIGINS = [
-  "https://big-airdrop.netlify.app",
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://127.0.0.1:5500",
-  "http://127.0.0.1:8080"
+  "https://big-airdrop.netlify.app"
 ];
 
 function originFromReferer(referer = "") {
@@ -41,24 +38,18 @@ export default async function handler(req, res) {
 
   // --- فحص الأصل ---
   if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
-    // نرجّع CORS حتى يرى المتصفح الرد
     res.setHeader("Access-Control-Allow-Origin", origin || "*");
     res.setHeader("Vary", "Origin");
     return res.status(403).json({ error: "Forbidden origin", got: origin || null });
   }
 
   try {
-    // تمرير الطلب للـWorker مع Origin نفسه + رؤوس معقولة
+    // تمرير الطلب للـWorker
     const response = await fetch(WORKER_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
-        "Sec-Fetch-Mode": "cors",
-        "Sec-Fetch-Site": "same-origin",
-        "Origin": origin,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
+        "Origin": origin
       },
       body: JSON.stringify(req.body)
     });
@@ -67,7 +58,6 @@ export default async function handler(req, res) {
     let payload;
     try { payload = JSON.parse(raw); } catch { payload = { raw }; }
 
-    // CORS في الرد
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
 
