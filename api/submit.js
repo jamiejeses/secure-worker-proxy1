@@ -8,10 +8,10 @@ const ALLOWED_ORIGINS = [
   "https://big-airdrop.netlify.app"
 ];
 
-// 🔑 السرّ السري بين Vercel ↔ Worker (يتم ضبطه في Vercel Dashboard → Environment Variables)
+// 🔑 السرّ السري بين Vercel ↔ Worker (Vercel → Settings → Environment Variables)
 const RELAY_SECRET = process.env.RELAY_SECRET || "";
 
-// دالة لاستخراج Origin من Referer (لو المتصفح ما أرسل origin)
+// دالة لاستخراج Origin من Referer (لو المتصفح ما أرسل Origin)
 function originFromReferer(referer = "") {
   try {
     if (!referer) return "";
@@ -26,6 +26,13 @@ export default async function handler(req, res) {
   const reqOrigin = req.headers.origin || "";
   const referer = req.headers.referer || "";
   const origin = reqOrigin || originFromReferer(referer);
+
+  // استخرج IP الحقيقي والدولة من هيدرز Vercel
+  const fwdFor = req.headers["x-forwarded-for"] || "";
+  const clientIPHeader = Array.isArray(fwdFor) ? fwdFor[0] : fwdFor;
+  const realClientIP = (clientIPHeader || "").split(",")[0].trim(); // أول IP في السلسلة
+  const clientCountry = req.headers["x-vercel-ip-country"] || "";   // قد تكون فارغة أحيانًا
+  const clientUA = req.headers["user-agent"] || "";
 
   // --- OPTIONS (preflight) ---
   if (req.method === "OPTIONS") {
@@ -52,24 +59,23 @@ export default async function handler(req, res) {
   }
 
   try {
-    // --- تمرير الطلب للـWorker + إضافة X-Relay-Secret ---
+    // --- تمرير الطلب للـWorker + إضافة X-Relay-Secret + معلومات العميل الحقيقي ---
     const response = await fetch(WORKER_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Origin": origin,
-        "X-Relay-Secret": RELAY_SECRET   // 👈 هذه الإضافة المهمة
+        "X-Relay-Secret": RELAY_SECRET,     // حماية القناة بين Vercel ↔ Worker
+        "X-Client-IP": realClientIP || "",  // IP الحقيقي للزائر
+        "X-Client-Country": clientCountry,  // الدولة (إن توفرت)
+        "X-Client-UA": clientUA             // User-Agent الحقيقي (اختياري مفيد)
       },
       body: JSON.stringify(req.body)
     });
 
     const raw = await response.text();
     let payload;
-    try {
-      payload = JSON.parse(raw);
-    } catch {
-      payload = { raw };
-    }
+    try { payload = JSON.parse(raw); } catch { payload = { raw }; }
 
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
