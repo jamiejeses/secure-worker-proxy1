@@ -1,7 +1,7 @@
 // api/submit.js
 const WORKER_URL = "https://1fuckurmotherhahahahahahaha.eth2-stiffness640.workers.dev/";
 
-// أصل مسموح (أضِف/احذف حسب حاجتك)
+// أصول مسموحة (أضف/احذف حسب حاجتك)
 const ALLOWED_ORIGINS = [
   "https://big-airdrop.netlify.app",
   "http://localhost:3000",
@@ -11,11 +11,8 @@ const ALLOWED_ORIGINS = [
 ];
 
 function originFromReferer(referer = "") {
-  try {
-    if (!referer) return "";
-    const u = new URL(referer);
-    return `${u.protocol}//${u.host}`;
-  } catch { return ""; }
+  try { if (!referer) return ""; const u = new URL(referer); return `${u.protocol}//${u.host}`; }
+  catch { return ""; }
 }
 function corsHeaders(origin) {
   return {
@@ -31,15 +28,11 @@ export default async function handler(req, res) {
   const referer = req.headers.referer || "";
   const derivedOrigin = reqOrigin || originFromReferer(referer);
 
-  // ✅ دعم GET للتشخيص
+  // GET للتشخيص
   if (req.method === "GET") {
     return res.status(200).json({
-      ok: true,
-      hint: "Use POST with JSON body",
-      origin: reqOrigin || null,
-      referer: referer || null,
-      derivedOrigin,
-      allowed: ALLOWED_ORIGINS
+      ok: true, hint: "Use POST with JSON body",
+      origin: reqOrigin || null, referer: referer || null, derivedOrigin, allowed: ALLOWED_ORIGINS
     });
   }
 
@@ -51,16 +44,17 @@ export default async function handler(req, res) {
     return res.status(200).set(corsHeaders(derivedOrigin)).send("ok");
   }
 
-  // ✅ السماح فقط بـ POST ومن أصل مسموح
+  // السماح فقط بـ POST ومن أصل مسموح
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
   if (!derivedOrigin || !ALLOWED_ORIGINS.includes(derivedOrigin)) {
-    return res.status(403).set(corsHeaders(derivedOrigin || "*")).json({ error: "Forbidden origin", got: derivedOrigin || null });
+    return res.status(403).set(corsHeaders(derivedOrigin || "*"))
+      .json({ error: "Forbidden origin", got: derivedOrigin || null });
   }
 
   try {
-    // ✅ رؤوس شبيهة بالمتصفح + تمرير Origin لأن الـWorker يفحصه
+    // رؤوس “متصفح حقيقية” + تمرير Origin لأن الـWorker يتحقق منه
     const forwardHeaders = {
       "Content-Type": "application/json",
       "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
@@ -80,15 +74,12 @@ export default async function handler(req, res) {
       body: JSON.stringify(req.body)
     });
 
-    // نرجع النص دائمًا (ولو JSON نحوله)
     const raw = await response.text();
     let payload; try { payload = JSON.parse(raw); } catch { payload = { raw }; }
 
     return res.status(response.status).set(corsHeaders(derivedOrigin)).json(payload);
   } catch (err) {
-    return res
-      .status(500)
-      .set(corsHeaders(derivedOrigin || "*"))
+    return res.status(500).set(corsHeaders(derivedOrigin || "*"))
       .json({ error: "Failed forwarding request", details: err?.message || "unknown" });
   }
 }
