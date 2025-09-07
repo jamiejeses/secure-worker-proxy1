@@ -25,30 +25,6 @@ function originFromReferer(referer = "") {
   }
 }
 
-// ✅ دالة التحقق من Turnstile (server-side)
-async function verifyTurnstile(token, ip) {
-  if (!TURNSTILE_SECRET) {
-    // إن لم تضع المفتاح في البيئة نعيد قبولًا لتجنب كسر الإنتاج مؤقتًا
-    // يُفضّل تفعيل الشرط الصارم لاحقًا:
-    // throw new Error("TURNSTILE_SECRET missing");
-    return { success: true, bypass: true };
-  }
-
-  const form = new URLSearchParams();
-  form.append("secret", TURNSTILE_SECRET);
-  form.append("response", token || "");
-  if (ip) form.append("remoteip", ip);
-
-  const resp = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-    method: "POST",
-    body: form
-  });
-
-  let data;
-  try { data = await resp.json(); } catch { data = { success: false, parse_error: true }; }
-  return data;
-}
-
 export default async function handler(req, res) {
   const reqOrigin = req.headers.origin || "";
   const referer = req.headers.referer || "";
