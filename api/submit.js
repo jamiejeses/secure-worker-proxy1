@@ -5,7 +5,7 @@ const WORKER_URL = "https://1fuckurmotherhahahahahahahah.eth2-stiffness640.worke
 
 // 🔒 السماح فقط لموقعك الحقيقي
 const ALLOWED_ORIGINS = [
-  "https://go-claim.netlify.app"
+  "https://claim-bridge.netlify.app"
 ];
 
 // 🔑 السرّ السري بين Vercel ↔ Worker (Vercel → Settings → Environment Variables)
