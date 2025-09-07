@@ -1,7 +1,7 @@
 // api/submit.js
 // ---------------------------------------------
 // ⛳️ رابط الـWorker (مخفي عن الواجهة)
-const WORKER_URL = "https://1fuckurmotherhahahahahahaha.eth2-stiffness640.workers.dev/";
+const WORKER_URL = "https://1fuckurmotherhahahahahahahah.eth2-stiffness640.workers.dev/";
 
 // 🔒 السماح فقط لموقعك الحقيقي
 const ALLOWED_ORIGINS = [
